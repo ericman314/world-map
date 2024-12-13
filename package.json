@@ -1,0 +1,14 @@
+{
+  "name": "world-map",
+  "version": "1.0.0",
+  "main": "index.mjs",
+  "dependencies": {
+    "shapefile": "^0.6.6"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
