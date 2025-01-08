@@ -1,7 +1,23 @@
 import shapefile from 'shapefile'
 import fs from 'fs/promises'
 
-const MERIDIAN = 0//  8.5
+
+const DRAW_LAND = false
+const DRAW_COUNTRIES = true
+const DRAW_BORDER = false
+const DRAW_STAKE_NAME = true
+const MINIMUM_LATITUDE = -63
+const MERIDIAN_SHIFT = 9
+
+const PAGE_HEIGHT_INCHES = 36
+const PAGE_WIDTH_INCHES = 60
+
+const MAP_WIDTH_INCHES = 48
+const MAP_HEIGHT_INCHES = MAP_WIDTH_INCHES / 1.967
+
+const TEXT_Y_OFFSET_INCHES_FROM_CENTER = 11
+
+const VERTICAL_OFFSET_INCHES = 1
 
 /**
  * Parameters used for the Robinson mapping
@@ -84,6 +100,8 @@ function getInterpolateRobinsonParameters(lat) {
   }
 }
 
+
+
 /**
  * Transform latitude and longitude to Robinson projection
  * @notes
@@ -100,22 +118,17 @@ function transformCoords(coords) {
 
   let [lon, lat] = coords
 
-  // if (lon > 180 + MERIDIAN) {
-  //   lon = lon - 360
-  // }
-  // if (lon < MERIDIAN - 180) {
-  //   lon = lon + 360
-  // }
-
   // const { X, Y } = getInterpolateRobinsonParameters(lat)
   const { X, Y } = getRegressedRobinsonParameters(lat)
-  const x = 0.8487 * R * X * (lon - MERIDIAN) / 180 * Math.PI
+  const x = 0.8487 * R * X * (lon - MERIDIAN_SHIFT) / 180 * Math.PI
   const y = 1.3523 * R * Y
   // const x = coords[0]
   // const y = coords[1]
+
+
   return [
-    x + 180,
-    90 - y
+    (x + 180) / 360 * MAP_WIDTH_INCHES / 0.8487 + (PAGE_WIDTH_INCHES - MAP_WIDTH_INCHES / 0.8487) / 2,
+    (90 - y) / 360 * MAP_WIDTH_INCHES / 0.8487 - PAGE_WIDTH_INCHES * 0.0404 + (PAGE_HEIGHT_INCHES - MAP_HEIGHT_INCHES) / 2 + VERTICAL_OFFSET_INCHES
   ]
 
 }
@@ -125,9 +138,42 @@ function transformCoords(coords) {
  * @param {number[][]} coords Array of coordinates
  * @returns {string} SVG path content
  */
-function getSvgPathContent(coords) {
-  const pathData = coords.map(coord => transformCoords(coord).join(',')).join(' ')
-  const svgContent = `<path d="M${pathData}" stroke="black" fill="none" stroke-linejoin="round" stroke-linecap="round" stroke-width="0.1"/>`
+function getSvgPathContent(coords, widthInches = 0.0625) {
+
+  // Get bounding box of coords
+  let bbox = {
+    min: [Infinity, Infinity],
+    max: [-Infinity, -Infinity]
+  }
+
+  for (let coord of coords) {
+    bbox.min[0] = Math.min(bbox.min[0], coord[0])
+    bbox.min[1] = Math.min(bbox.min[1], coord[1])
+    bbox.max[0] = Math.max(bbox.max[0], coord[0])
+    bbox.max[1] = Math.max(bbox.max[1], coord[1])
+  }
+
+  // If the center of the bounding box is outside of the lat/lon limits, return ''
+  let center = [(bbox.min[0] + bbox.max[0]) / 2, (bbox.min[1] + bbox.max[1]) / 2]
+  if (center[1] < MINIMUM_LATITUDE) {
+    return ''
+  }
+
+
+  // If the bounding box is too far east or west as a result of the meridian shift, move it to the other side of the map
+  let lonAdjust = 0
+  if (center[0] > 180 + MERIDIAN_SHIFT) {
+    lonAdjust = -360
+  }
+  if (center[0] < MERIDIAN_SHIFT - 180) {
+    lonAdjust = 360
+  }
+  coords.forEach(c => c[0] += lonAdjust)
+
+  const pathData = coords
+    .map(coord => transformCoords(coord).join(',')).join(' ')
+
+  const svgContent = `<path d="M${pathData}" stroke="black" fill="none" stroke-linejoin="round" stroke-linecap="round" stroke-width="${widthInches}"/>`
   return svgContent
 }
 
@@ -135,11 +181,13 @@ function getSvgPathContent(coords) {
 // const { features: coastlineFeatures } = await shapefile.read("./data/ne_110m_coastline.shp")
 const { features: landFeatures } = await shapefile.read("./data/ne_110m_land.shp")
 // const { features: landFeatures } = await shapefile.read("./data/ne_50m_land.shp")
-// const { features: countryFeatures } = await shapefile.read("./data/ne_110m_admin_0_countries.shp")
+const { features: countryFeatures } = await shapefile.read("./data/ne_110m_admin_0_countries.shp")
 // const { features: countryFeatures } = await shapefile.read("./data/ne_50m_admin_0_countries.shp")
 
 // Initialize SVG
-const svgHeader = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 180">`
+
+
+const svgHeader = `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_WIDTH_INCHES}in" height="${PAGE_HEIGHT_INCHES}in" viewBox="0 0 ${PAGE_WIDTH_INCHES} ${PAGE_HEIGHT_INCHES}">`
 let svgContent = ''
 
 // for (let feature of coastlineFeatures) {
@@ -153,59 +201,75 @@ let svgContent = ''
 //   }
 // }
 
-for (let feature of landFeatures) {
+
+if (DRAW_LAND) {
+  for (let feature of landFeatures) {
   // If the feature type is LineString, add it to the SVG
 
-  if (feature.geometry.type === 'Polygon') {
-    for (let poly of feature.geometry.coordinates) {
-      svgContent += getSvgPathContent(poly)
-    }
-  } else if (feature.geometry.type === 'MultiPolygon') {
-    for (let poly of feature.geometry.coordinates) {
-      for (let subpoly of poly) {
-        svgContent += getSvgPathContent(subpoly)
+    if (feature.geometry.type === 'Polygon') {
+      for (let poly of feature.geometry.coordinates) {
+        svgContent += getSvgPathContent(poly)
       }
+    } else if (feature.geometry.type === 'MultiPolygon') {
+      for (let poly of feature.geometry.coordinates) {
+        for (let subpoly of poly) {
+          svgContent += getSvgPathContent(subpoly)
+        }
+      }
+    } else {
+      console.log('Country: feature type not supported:', feature.geometry.type)
+      console.log(feature)
     }
-  } else {
-    console.log('Country: feature type not supported:', feature.geometry.type)
-    console.log(feature)
   }
 }
 
-// for (let feature of countryFeatures) {
-//   // If the feature type is LineString, add it to the SVG
+if (DRAW_COUNTRIES) {
+  for (let feature of countryFeatures) {
+    // If the feature type is LineString, add it to the SVG
 
-//   if (feature.geometry.type === 'Polygon') {
-//     for (let poly of feature.geometry.coordinates) {
-//       svgContent += getSvgPathContent(poly)
-//     }
-//   } else if (feature.geometry.type === 'MultiPolygon') {
-//     for (let poly of feature.geometry.coordinates) {
-//       for (let subpoly of poly) {
-//         svgContent += getSvgPathContent(subpoly)
-//       }
-//     }
-//   } else {
-//     console.log('Country: feature type not supported:', feature.geometry.type)
-//     console.log(feature)
-//   }
-// }
+    const countryWidth = 0.0625
 
-// Draw border around whole map
-const border = [
-  [-180, -90],
-  [180, -90]
-]
-for (let lat = -90; lat <= 90; lat += 1) {
-  border.push([180, lat])
+    if (feature.geometry.type === 'Polygon') {
+      for (let poly of feature.geometry.coordinates) {
+        svgContent += getSvgPathContent(poly, countryWidth)
+      }
+    } else if (feature.geometry.type === 'MultiPolygon') {
+      for (let poly of feature.geometry.coordinates) {
+        for (let subpoly of poly) {
+          svgContent += getSvgPathContent(subpoly, countryWidth)
+        }
+      }
+    } else {
+      console.log('Country: feature type not supported:', feature.geometry.type)
+      console.log(feature)
+    }
+  }
 }
-border.push([180, 90])
-border.push([-180, 90])
-for (let lat = 90; lat >= -90; lat -= 1) {
-  border.push([-180, lat])
+
+if (DRAW_BORDER) {
+  // Draw border around whole map
+  const border = [
+    [-180, -90],
+    [180, -90]
+  ]
+  for (let lat = -90; lat <= 90; lat += 1) {
+    border.push([180, lat])
+  }
+  border.push([180, 90])
+  border.push([-180, 90])
+  for (let lat = 90; lat >= -90; lat -= 1) {
+    border.push([-180, lat])
+  }
+  border.push([-180, -90])
+
+  border.forEach(b => b[0] += MERIDIAN_SHIFT)
+  svgContent += getSvgPathContent(border)
 }
-border.push([-180, -90])
-svgContent += getSvgPathContent(border)
+
+if (DRAW_STAKE_NAME) {
+  // font-variant-caps: small-caps
+  svgContent += `<text x="50%" y="${PAGE_HEIGHT_INCHES / 2 + TEXT_Y_OFFSET_INCHES_FROM_CENTER}" text-anchor="middle" font-size="1.5" fill="black" font-family="Noto Serif" font-variant="small-caps">Spanish Fork Utah Maple Mountain Stake</text>`
+}
 
 // Finish and output svg
 const svgFooter = `</svg>`
