@@ -1,0 +1,29 @@
+{
+  "include": [
+    "src/**/*"
+  ],
+  "compilerOptions": {
+    "lib": [
+      "es2021",
+      "ESNext",
+    ],
+    "target": "ES2021",
+    "allowJs": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "jsx": "react-jsx",
+    // Types should go into this directory.
+    // Removing this would place the .d.ts files
+    // next to the .js files
+    "outDir": "types",
+    "skipLibCheck": true
+  }
+}
