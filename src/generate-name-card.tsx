@@ -1,9 +1,21 @@
 import fs from 'fs/promises'
 import path from 'path'
-import React from 'react'
+import React, { ReactNode } from 'react'
 import ReactPDF, { Font } from '@react-pdf/renderer'
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
 import { execSync } from 'child_process'
+
+type MissionaryData = {
+  name: string
+  image: string
+  ward: string
+  mission: string | string[]
+  flag: string
+  startDate: string
+  endDate: string
+  overrideWidth?: number
+  overrideHeight?: number
+}[]
 
 Font.register({
   family: "Noto Serif",
@@ -13,14 +25,18 @@ Font.register({
   ]
 })
 
-const dataDir = './example-data'
-// const dataDir = './missionary-data'
+// Disable hyphenation
+Font.registerHyphenationCallback(word => [word])
+
+
+// const dataDir = './example-data'
+const dataDir = './missionary-data'
 
 main()
 
 async function main() {
 
-  const missionaryData = await fs.readFile(path.join(dataDir, '/example-names.json'), 'utf-8')
+  const missionaryData: MissionaryData = await fs.readFile(path.join(dataDir, '/missionary-names.json'), 'utf-8')
     .then(data => JSON.parse(data))
 
   if (!process.argv[2]) {
@@ -45,11 +61,31 @@ async function main() {
   -compose CopyOpacity -composite \\
   tmp-images/oval-mask.png`)
 
-  const allNameCards = [] 
+  const allNameCards: ReactNode[] = []
 
   for (let missionary of missionaryData) {
     if (!missionary.name.match(process.argv[2])) continue
     console.log(`Rendering name card for ${missionary.name}`)
+
+    let width = ovalWidth
+    let height = ovalHeight
+    let ovalMaskImageFileName = 'oval-mask.png'
+
+    if (missionary.overrideWidth || missionary.overrideHeight) {
+      ovalMaskImageFileName = 'oval-custom.png'
+      width = missionary.overrideWidth || ovalWidth
+      height = missionary.overrideHeight || ovalHeight
+      execSync(`convert -size ${width}x${height} xc:white \\
+        -draw "ellipse ${width / 2 + shadowOffsetX},${height / 2 + shadowOffsetY} ${width / 2 - ovalPadding},${height / 2 - ovalPadding} 0,360" \\
+        -blur 0x10 \\
+        -alpha set \\
+        xc:white \\
+        -fill black \\
+        -draw "ellipse ${width / 2},${height / 2} ${width / 2 - ovalPadding},${height / 2 - ovalPadding} 0,360" \\
+        -alpha off \\
+        -compose CopyOpacity -composite \\
+        tmp-images/${ovalMaskImageFileName}`)
+    }
 
     // Add a shadow to the flag
     let flagFilenameWithoutExt = missionary.flag.split('.').slice(0, -1).join('.')
@@ -61,14 +97,23 @@ async function main() {
 
     // Crop the image to an oval and add a shadow
 
+    try {
     execSync(`convert ${path.join(dataDir, missionary.image)} \\
-      -resize x${ovalWidth}^ -resize '${ovalWidth}x${ovalHeight}^' -gravity center -extent ${ovalWidth}x${ovalHeight} \\
-      tmp-images/oval-mask.png -compose over -composite \\
+      -resize x${width}^ -resize '${width}x${height}^' -gravity center -extent ${width}x${height} \\
+      tmp-images/${ovalMaskImageFileName} -compose over -composite \\
       ${path.join(dataDir, imageOvalFilename)}`)
-
+    } catch (ex) {
+      console.error(ex)
+    }
 
     allNameCards.push(
-      <NameCard key={missionary.name} dataDir={dataDir} {...missionary} flag={flagShadowFilename} image={imageOvalFilename} />
+      <NameCard
+        key={missionary.name}
+        dataDir={dataDir}
+        {...missionary}
+        flag={flagShadowFilename}
+        image={imageOvalFilename}
+      />
     )
   }
 
@@ -113,7 +158,8 @@ const styles = StyleSheet.create({
   mainArea: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    flex: 1,
   },
   leftSide: {
     flex: 1,
@@ -125,16 +171,26 @@ const styles = StyleSheet.create({
     // borderRadius: '50%',
   },
   rightSide: {
+    height: "100%",
     flexDirection: 'column',
     justifyContent: 'space-between',
     alignItems: 'center',
     flex: 1,
-    gap: '0.05in'
+    gap: '0.05in',
   },
   ward: {
     fontSize: 9,
     fontFamily: 'Noto Serif',
-    color: '#444'
+    color: '#444',
+    flexGrow: 0,
+    marginTop: '0.05in'
+  },
+  missionAndFlag: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.05in',
+    flexGrow: 1,
   },
   mission: {
     fontSize: 11,
@@ -161,46 +217,42 @@ type NameCardProps = {
   flag: string
   startDate: string
   endDate: string
+  overrideFontSize?: number
 }
 
-export function NameCard({ dataDir, name, image, ward, mission, flag, startDate, endDate }: NameCardProps) {
+export function NameCard({ dataDir, name, image, ward, mission, flag, startDate, endDate, overrideFontSize = 16 }: NameCardProps) {
+
   return (
-      <View style={styles.card}>
+    <View style={styles.card}>
 
-        <Text style={styles.name}>
-          {name}
-        </Text>
+      <Text style={{ ...styles.name, fontSize: overrideFontSize }}>
+        {name}
+      </Text>
 
-        <View style={styles.mainArea}>
+      <View style={styles.mainArea}>
 
-          <View style={styles.leftSide}>
-            <Image style={styles.image} src={path.join(dataDir, image)} />
-          </View>
+        <View style={styles.leftSide}>
+          <Image style={styles.image} src={path.join(dataDir, image)} />
+        </View>
 
-          <View style={styles.rightSide}>
+        <View style={styles.rightSide}>
 
-            <Text style={styles.ward}>
-              {ward}
+          <Text style={styles.ward}>
+            {ward}
+          </Text>
+
+          <View style={styles.missionAndFlag}>
+            <Text style={styles.mission}>
+              {mission}
             </Text>
-
-            {
-              Array.isArray(mission)
-                ? mission.map((line, index) => (
-                  <Text key={index} style={styles.mission}>
-                    {line}
-                  </Text>
-                ))
-                : <Text style={styles.mission}>
-                  {mission}
-                </Text>
-            }
             <Image style={styles.flag} src={path.join('flags', flag)} />
           </View>
         </View>
+      </View>
 
-        <Text style={styles.dates}>
-          {startDate} &ndash; {endDate}
-        </Text>
+      <Text style={styles.dates}>
+        {startDate} &ndash; {endDate}
+      </Text>
 
     </View>
   )

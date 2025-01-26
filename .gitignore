@@ -5,5 +5,5 @@ renderings/
 missionary-data/
 *.shadow.png
 *.oval.png
-oval-mask.png
 cards.pdf
+tmp-images/
