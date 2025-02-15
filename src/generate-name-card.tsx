@@ -62,9 +62,9 @@ async function main() {
   tmp-images/oval-mask.png`)
 
   const allNameCards: ReactNode[] = []
+  const filteredMissionaries = missionaryData.filter(missionary => missionary.name.match(process.argv[2]))
 
-  for (let missionary of missionaryData) {
-    if (!missionary.name.match(process.argv[2])) continue
+  for (let missionary of filteredMissionaries) {
     console.log(`Rendering name card for ${missionary.name}`)
 
     let width = ovalWidth
@@ -98,10 +98,10 @@ async function main() {
     // Crop the image to an oval and add a shadow
 
     try {
-    execSync(`convert ${path.join(dataDir, missionary.image)} \\
-      -resize x${width}^ -resize '${width}x${height}^' -gravity center -extent ${width}x${height} \\
-      tmp-images/${ovalMaskImageFileName} -compose over -composite \\
-      ${path.join(dataDir, imageOvalFilename)}`)
+      execSync(`convert ${path.join(dataDir, missionary.image)} \\
+        -resize x${width}^ -resize '${width}x${height}^' -gravity center -extent ${width}x${height} \\
+        tmp-images/${ovalMaskImageFileName} -compose over -composite \\
+        ${path.join(dataDir, imageOvalFilename)}`)
     } catch (ex) {
       console.error(ex)
     }
@@ -117,15 +117,33 @@ async function main() {
     )
   }
 
-  const doc = (
-    <Document>
-      <Page size="LETTER" style={styles.page}>
-        {allNameCards}
-      </Page>
-    </Document>
-  )
+  const COMBINED = true
 
-  await ReactPDF.render(doc, `cards.pdf`)
+  if (COMBINED) {
+    const doc = (
+      <Document>
+        <Page size='LETTER' style={styles.page}>
+          {allNameCards}
+        </Page>
+      </Document>
+    )
+
+    await ReactPDF.render(doc, `cards.pdf`)
+  } else {
+    for (let i = 0; i < allNameCards.length; i++) {
+      const missionary = filteredMissionaries[i]
+      const doc = (
+        <Document>
+          <Page size='LETTER' style={styles.page}>
+            {allNameCards[i]}
+          </Page>
+        </Document>
+      )
+
+      await ReactPDF.render(doc, `cards/${missionary.name}.pdf`)
+    }
+  }
+
 }
 
 
@@ -135,18 +153,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     backgroundColor: 'white',
-    border: '1px solid black',
     textAlign: 'center',
-    gap: '0.1in',
-    padding: '0.25in'
+    gap: '0in',
+    padding: '0.5in'
   },
   card: {
     flexDirection: 'column',
     justifyContent: 'space-between',
-    width: "3in",
-    height: "2.5in",
+    width: "3.6in",
+    height: "2.45in",
     backgroundColor: "white",
-    border: '0.09in solid black',
+    border: '0.05in solid black',
     padding: '0.1in'
   },
   name: {
@@ -223,7 +240,7 @@ type NameCardProps = {
 export function NameCard({ dataDir, name, image, ward, mission, flag, startDate, endDate, overrideFontSize = 16 }: NameCardProps) {
 
   return (
-    <View style={styles.card}>
+    <View style={styles.card} wrap={false}>
 
       <Text style={{ ...styles.name, fontSize: overrideFontSize }}>
         {name}
