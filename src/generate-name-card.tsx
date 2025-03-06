@@ -4,6 +4,7 @@ import React, { ReactNode } from 'react'
 import ReactPDF, { Font } from '@react-pdf/renderer'
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
 import { execSync } from 'child_process'
+import { parse } from 'jsonc-parser'
 
 type MissionaryData = {
   name: string
@@ -15,6 +16,9 @@ type MissionaryData = {
   endDate: string
   overrideWidth?: number
   overrideHeight?: number
+  printed?: boolean
+  returned?: boolean
+  recordsMovedOut?: boolean
 }[]
 
 Font.register({
@@ -36,8 +40,8 @@ main()
 
 async function main() {
 
-  const missionaryData: MissionaryData = await fs.readFile(path.join(dataDir, '/missionary-names.json'), 'utf-8')
-    .then(data => JSON.parse(data))
+  const missionaryData: MissionaryData = await fs.readFile(path.join(dataDir, '/missionary-names.jsonc'), 'utf-8')
+    .then(data => parse(data))
 
   if (!process.argv[2]) {
     console.log(`Usage: node generate-name-card.mjs <pattern>`)
@@ -62,7 +66,12 @@ async function main() {
   tmp-images/oval-mask.png`)
 
   const allNameCards: ReactNode[] = []
-  const filteredMissionaries = missionaryData.filter(missionary => missionary.name.match(process.argv[2]))
+  const filteredMissionaries = missionaryData.filter(missionary =>
+    missionary.name.match(process.argv[2])
+    && !missionary.printed
+    && !missionary.returned
+    && !missionary.recordsMovedOut
+  )
 
   for (let missionary of filteredMissionaries) {
     console.log(`Rendering name card for ${missionary.name}`)
