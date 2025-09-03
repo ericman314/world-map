@@ -6,12 +6,13 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { execSync } from 'child_process'
 import { parse } from 'jsonc-parser'
 
+type FlagMap = Record<string, string | undefined>
+
 type MissionaryData = {
   name: string
   image: string
   ward: string
-  mission: string | string[]
-  flag: string
+  mission: string
   startDate: string
   endDate: string
   overrideWidth?: number
@@ -43,10 +44,18 @@ async function main() {
   const missionaryData: MissionaryData = await fs.readFile(path.join(dataDir, '/missionary-names.jsonc'), 'utf-8')
     .then(data => parse(data))
 
+  const flagMap: FlagMap = await fs.readFile('./flags/mission-flag-map.jsonc', 'utf-8')
+    .then(data => parse(data))
+
   if (!process.argv[2]) {
-    console.log(`Usage: node generate-name-card.mjs <pattern>`)
+    console.log(`Usage: node generate-name-card.mjs <pattern> [flags]`)
+    console.log(`Flags:`)
+    console.log(`  hide-missing   Hide cards with missing images or flags`)
     process.exit(1)
   }
+
+  const argFlags = process.argv.slice(2)
+  const hideMissing = argFlags.includes('hide-missing')
 
   const ovalWidth = 500
   const ovalHeight = 600
@@ -66,6 +75,7 @@ async function main() {
   tmp-images/oval-mask.png`)
 
   const allNameCards: ReactNode[] = []
+  const allErrors: string[] = []
   const filteredMissionaries = missionaryData.filter(missionary =>
     missionary.name.match(process.argv[2])
     && !missionary.printed
@@ -97,9 +107,23 @@ async function main() {
     }
 
     // Add a shadow to the flag
-    let flagFilenameWithoutExt = missionary.flag.split('.').slice(0, -1).join('.')
-    let flagShadowFilename = `${flagFilenameWithoutExt}.shadow.png`
-    execSync(`convert flags/${missionary.flag} -resize 300x \\( +clone -background black -shadow 80x7+7+7 \\) +swap -background none -layers merge +repage flags/${flagShadowFilename}`)
+    let flagFilename = flagMap[missionary.mission]
+    let flagShadowFilename = ''
+    if (flagFilename) {
+      let flagFilenameWithoutExt = flagFilename.split('.').slice(0, -1).join('.')
+      flagShadowFilename = `${flagFilenameWithoutExt}.shadow.png`
+      // Verify the flag file exists
+      try {
+        await fs.access(path.join('flags', flagFilename))
+        execSync(`convert flags/${flagFilename} -resize 300x \\( +clone -background black -shadow 80x7+7+7 \\) +swap -background none -layers merge +repage flags/${flagShadowFilename}`)
+      } catch (ex: any) {
+        allErrors.push(`Flag file not found for ${missionary.mission}: ${flagFilename}`)
+        if (hideMissing) continue
+      }
+    } else {
+      allErrors.push(`No flag file defined for ${missionary.mission}`)
+      if (hideMissing) continue
+    }
 
     let imageWithoutExt = missionary.image.split('.').slice(0, -1).join('.')
     let imageOvalFilename = `${imageWithoutExt}.oval.png`
@@ -111,8 +135,13 @@ async function main() {
         -resize x${width}^ -resize '${width}x${height}^' -gravity center -extent ${width}x${height} \\
         tmp-images/${ovalMaskImageFileName} -compose over -composite \\
         ${path.join(dataDir, imageOvalFilename)}`)
-    } catch (ex) {
-      console.error(ex)
+    } catch (ex: any) {
+      if (/No such file or directory/.test(ex.message)) {
+        allErrors.push(`Image file not found for ${missionary.name}: ${missionary.image}`)
+      } else {
+        allErrors.push(`Error processing image for ${missionary.name}: ${ex}`)
+      }
+      if (hideMissing) continue
     }
 
     allNameCards.push(
@@ -126,6 +155,8 @@ async function main() {
     )
   }
 
+  console.log(allErrors)
+
   const COMBINED = true
 
   if (COMBINED) {
@@ -133,6 +164,7 @@ async function main() {
       <Document>
         <Page size='LETTER' style={styles.page}>
           {allNameCards}
+          <ErrorList errors={allErrors} />
         </Page>
       </Document>
     )
@@ -145,6 +177,7 @@ async function main() {
         <Document>
           <Page size='LETTER' style={styles.page}>
             {allNameCards[i]}
+            <ErrorList errors={allErrors} />
           </Page>
         </Document>
       )
@@ -280,6 +313,20 @@ export function NameCard({ dataDir, name, image, ward, mission, flag, startDate,
         {startDate} &ndash; {endDate}
       </Text>
 
+    </View>
+  )
+}
+
+function ErrorList({ errors }: { errors: string[] }) {
+  return (
+    <View style={{ marginTop: '0.25in' }}>
+      {errors.map((error, index) => (
+        <View key={index}>
+          <Text style={{ marginTop: 5, color: 'red', fontSize: 10 }}>
+            {error}
+          </Text>
+        </View>
+      ))}
     </View>
   )
 }
