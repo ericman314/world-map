@@ -204,7 +204,7 @@ let svgContent = ''
 
 if (DRAW_LAND) {
   for (let feature of landFeatures) {
-  // If the feature type is LineString, add it to the SVG
+    // If the feature type is LineString, add it to the SVG
 
     if (feature.geometry.type === 'Polygon') {
       for (let poly of feature.geometry.coordinates) {
