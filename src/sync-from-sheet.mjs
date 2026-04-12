@@ -40,6 +40,11 @@ function appendMissionSuffix(mission) {
   if (!mission) return ''
   // Some missions already have "Mission" in the name (e.g. "Church-Service Mission", "Utah Spanish Fork Mission")
   if (mission.endsWith('Mission')) return mission
+
+  // Some missions do not have "Mission" in the name at all
+  if (mission.match(/historic sites/i)) return mission
+
+  // For all other missions, append "Mission" suffix
   return mission + ' Mission'
 }
 
